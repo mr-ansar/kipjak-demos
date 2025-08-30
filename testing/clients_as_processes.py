@@ -1,0 +1,54 @@
+# clients_as_processes.py
+import kipjak as kj
+import random
+from test_api import Xy, table_type
+from clients_as_threads import clients_as_threads
+
+#
+DEFAULT_SERVER = kj.HostPort('127.0.0.1', 5050)
+
+#
+#
+def clients_as_processes(self, process_count: int=1, thread_count: int=1, test_span: kj.TimeSpan=None,
+	client_type: kj.Type=None, server_address: kj.HostPort=None,
+	request_count: int=1, slow_down: float=1.0, big_table: int=100):
+	server_address = server_address or DEFAULT_SERVER
+
+	# Start the processes.
+	for i in range(process_count):
+		a = self.create(kj.ProcessObject, clients_as_threads,
+			thread_count=thread_count,
+			client_type=client_type, server_address=server_address,
+			request_count=request_count, slow_down=slow_down,
+			big_table=big_table)
+		self.assign(a, i)
+
+	if test_span is not None:
+		self.start(kj.T1, test_span)
+
+	unexpected = 0
+	while self.working():
+		m = self.input()
+		if isinstance(m, (kj.Stop, kj.T1)):
+			self.abort()
+		elif isinstance(m, kj.Returned):
+			self.debrief()
+			value, port = m.cast_back()
+
+			# Termination due to abort().
+			if isinstance(value, kj.Aborted):
+				continue
+
+			# Something less desirable.
+			if isinstance(value, kj.Faulted):
+				self.warning('Faulted', fault=str(value))
+			else:
+				self.warning('Unexpected', tag=kj.portable_to_tag(port))
+			unexpected += 1
+
+	return kj.cast_to(unexpected, kj.int_type)
+
+kj.bind(clients_as_processes)
+
+if __name__ == '__main__':
+	kj.create(clients_as_processes)
